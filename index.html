@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timer — Configuración</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f5f2ec;
+  --surface: #ffffff;
+  --card: #f0ece4;
+  --border: #ddd8ce;
+  --accent: #1a1a2e;
+  --red: #e03535;
+  --green: #1d7a4e;
+  --muted: #9a9282;
+  --text: #1a1814;
+  --mono: 'DM Mono', monospace;
+  --serif: 'Instrument Serif', serif;
+  --sans: 'Outfit', sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 20px 80px;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    radial-gradient(circle at 15% 85%, rgba(26,26,46,0.04) 0%, transparent 50%),
+    radial-gradient(circle at 85% 15%, rgba(224,53,53,0.03) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.wrap { width: 100%; max-width: 480px; position: relative; z-index: 1; }
+
+/* ── Header ── */
+header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; gap: 12px; }
+header h1 { font-family: var(--serif); font-size: 2.5rem; font-style: italic; letter-spacing: -0.02em; line-height: 1; }
+header p { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+
+/* Botón abrir ventana */
+.btn-window {
+  flex-shrink: 0;
+  font-family: var(--sans); font-weight: 600; font-size: 0.78rem;
+  letter-spacing: 0.03em; padding: 10px 16px; border-radius: 10px;
+  background: var(--accent); color: #fff; border: none;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-window:hover { background: #2d2d4e; }
+.btn-window:active { transform: scale(0.96); }
+
+/* Indicador de ventana abierta */
+.window-status {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.72rem; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; margin-bottom: 22px;
+}
+.ws-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted); flex-shrink: 0; transition: background 0.3s;
+}
+.ws-dot.on { background: var(--green); animation: pulse 1.4s ease-in-out infinite; }
+.ws-dot.playing { background: var(--green); animation: pulse 0.9s ease-in-out infinite; }
+.ws-dot.danger  { background: var(--red);   animation: pulse 0.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Toggle tipo */
+.type-toggle {
+  display: flex; background: var(--card);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 4px; margin-bottom: 20px; gap: 4px;
+}
+.ttab {
+  flex: 1; font-family: var(--sans); font-weight: 600;
+  font-size: 0.78rem; letter-spacing: 0.03em;
+  padding: 10px 8px; border: none; background: transparent;
+  border-radius: 9px; color: var(--muted);
+  cursor: pointer; transition: all 0.18s; text-align: center;
+}
+.ttab.active { background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+
+/* Panel de control activo */
+.control-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 20px 22px; margin-bottom: 20px;
+  box-shadow: 0 2px 0 var(--border);
+}
+.control-panel h3 { font-family: var(--serif); font-size: 1rem; font-style: italic; color: var(--muted); margin-bottom: 14px; }
+
+.preview-row {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 16px;
+}
+.preview-time { font-family: var(--mono); font-size: 2.2rem; font-weight: 400; letter-spacing: 0.04em; color: var(--text); flex-shrink: 0; }
+.preview-info { flex: 1; min-width: 0; }
+.preview-name { font-weight: 700; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-sub  { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+/* Controles de reproducción */
+.playback-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn {
+  font-family: var(--sans); font-weight: 600; font-size: 0.8rem;
+  letter-spacing: 0.03em; padding: 9px 18px; border-radius: 9px;
+  border: 1.5px solid transparent; cursor: pointer; transition: all 0.15s; outline: none;
+}
+.btn:active { transform: scale(0.96); }
+.btn-solid   { background: var(--accent); color: #fff; }
+.btn-solid:hover { background: #2d2d4e; }
+.btn-outline { background: transparent; color: var(--text); border-color: var(--border); }
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+.btn-ghost   { background: transparent; color: var(--muted); padding: 9px 12px; }
+.btn-ghost:hover { color: var(--red); }
+
+/* Crear temporizador */
+.create-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 20px 22px; margin-bottom: 20px;
+  box-shadow: 0 2px 0 var(--border);
+}
+.create-card h3 { font-family: var(--serif); font-size: 1rem; font-style: italic; color: var(--muted); margin-bottom: 14px; }
+.input-row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 90px; }
+.field label { font-size: 0.67rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.field input {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: var(--mono); font-size: 1rem;
+  padding: 9px 12px; outline: none; transition: border-color 0.2s; width: 100%; text-align: center;
+}
+.field input[type="text"] { font-family: var(--sans); text-align: left; }
+.field input:focus { border-color: var(--accent); background: #fff; }
+.field input::placeholder { color: var(--muted); opacity: 0.6; }
+.btn-add { width: 100%; font-family: var(--sans); font-weight: 600; font-size: 0.82rem; padding: 11px; border-radius: 10px; background: transparent; color: var(--green); border: 1.5px solid #b5d9c8; cursor: pointer; transition: all 0.15s; }
+.btn-add:hover { background: rgba(29,122,78,0.06); }
+
+/* Guardados */
+.saved-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.saved-header h2 { font-family: var(--serif); font-size: 1.3rem; font-style: italic; }
+.badge { font-family: var(--mono); font-size: 0.68rem; background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; color: var(--muted); }
+.saved-list { display: flex; flex-direction: column; gap: 8px; }
+.empty { text-align: center; padding: 28px 16px; border: 1.5px dashed var(--border); border-radius: 14px; color: var(--muted); font-size: 0.85rem; line-height: 1.6; }
+.empty strong { display: block; font-size: 1.5rem; margin-bottom: 8px; opacity: 0.3; }
+
+.t-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 13px;
+  padding: 12px 15px; display: flex; align-items: center; gap: 11px;
+  box-shadow: 0 1px 0 var(--border);
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  animation: fadeIn 0.25s ease; cursor: pointer;
+}
+.t-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(26,26,46,0.08); }
+.t-card.selected { border-color: var(--accent); background: rgba(26,26,46,0.025); }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+
+.t-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.t-info { flex: 1; min-width: 0; }
+.t-name { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-dur  { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+.t-time { font-family: var(--mono); font-size: 1.05rem; font-weight: 500; color: var(--text); flex-shrink: 0; }
+.t-actions { display: flex; gap: 5px; }
+.icon-btn { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer; font-size: 0.82rem; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.icon-btn:hover { border-color: var(--accent); color: var(--text); }
+.icon-btn.del:hover { border-color: var(--red); color: var(--red); background: rgba(224,53,53,0.06); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Timers</h1>
+      <p>Configuración</p>
+    </div>
+    <button class="btn-window" onclick="openPlayerWindow()">
+      <span>⎋</span> Abrir reproductor
+    </button>
+  </header>
+
+  <!-- Estado de la ventana -->
+  <div class="window-status">
+    <div class="ws-dot" id="wsDot"></div>
+    <span id="wsText">Ventana del reproductor no abierta</span>
+  </div>
+
+  <!-- Toggle tipo -->
+  <div class="type-toggle">
+    <button class="ttab active" id="ttTimer"     onclick="switchType('timer')">⏱ Temporizador</button>
+    <button class="ttab"        id="ttStopwatch" onclick="switchType('stopwatch')">⏲ Cronómetro</button>
+  </div>
+
+  <!-- Panel de control -->
+  <div class="control-panel">
+    <h3>Ahora</h3>
+    <div class="preview-row">
+      <div class="preview-time" id="previewTime">--:--</div>
+      <div class="preview-info">
+        <div class="preview-name" id="previewName">Sin selección</div>
+        <div class="preview-sub"  id="previewSub">Selecciona un temporizador</div>
+      </div>
+    </div>
+    <div class="playback-controls">
+      <button class="btn btn-solid"   id="btnPlay"   onclick="sendPlay()">▶ Reproducir</button>
+      <button class="btn btn-outline" id="btnPause"  onclick="sendPause()">⏸ Pausar</button>
+      <button class="btn btn-outline" id="btnReset"  onclick="sendReset()">↺ Reiniciar</button>
+      <button class="btn btn-ghost"   id="btnStop"   onclick="sendStop()">■ Detener</button>
+    </div>
+  </div>
+
+  <!-- Crear (solo timer) -->
+  <div class="create-card" id="createCard">
+    <h3>Nuevo temporizador</h3>
+    <div class="input-row">
+      <div class="field" style="flex:2;min-width:150px">
+        <label>Nombre</label>
+        <input type="text" id="inName" placeholder="Pomodoro, Ejercicio…">
+      </div>
+      <div class="field">
+        <label>Min</label>
+        <input type="number" id="inMin" min="0" max="99" value="5">
+      </div>
+      <div class="field">
+        <label>Seg</label>
+        <input type="number" id="inSec" min="0" max="59" value="0">
+      </div>
+    </div>
+    <button class="btn-add" onclick="addTimer()">+ Guardar temporizador</button>
+  </div>
+
+  <!-- Guardados (solo timer) -->
+  <div id="savedSection">
+    <div class="saved-header">
+      <h2>Guardados</h2>
+      <span class="badge" id="countBadge">0</span>
+    </div>
+    <div class="saved-list" id="savedList"></div>
+  </div>
+
+</div>
+
+<script>
+// ─── Canal de comunicación: localStorage ─────────────────────────────
+const CH = 'timer_channel_v1';
+
+function broadcast(msg) {
+  localStorage.setItem(CH, JSON.stringify({ ...msg, _t: Date.now() }));
+}
+
+// ─── Estado local ────────────────────────────────────────────────────
+let timers   = JSON.parse(localStorage.getItem('timers_v5') || '[]');
+let appType  = 'timer';
+let activeId = null;
+let playerWin = null;
+
+// Estado de reproducción (para reflejar en UI)
+let playerState = { status: 'idle' }; // idle | playing | paused | done
+
+const COLORS = ['#1a1a2e','#c04040','#1d7a4e','#b06020','#1a4e7a','#7a1a6e','#5a6e1a'];
+let colorIdx = 0;
+
+// ─── Utilidades ──────────────────────────────────────────────────────
+const pad = n => String(Math.floor(Math.abs(n))).padStart(2,'0');
+function fmtMs(ms) {
+  const t = Math.floor(ms/1000), s = t%60, m = Math.floor(t/60)%60, h = Math.floor(t/3600);
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+function fmtLabel(ms) {
+  const s = Math.floor(ms/1000), m = Math.floor(s/60);
+  if (m===0) return `${s}s`;
+  if (s%60===0) return `${m}m`;
+  return `${m}m ${s%60}s`;
+}
+
+// ─── Ventana reproductor ──────────────────────────────────────────────
+function openPlayerWindow() {
+  // Construir URL del reproductor en línea (misma página con ?mode=player)
+  const url = new URL('player.html', location.href).href;
+  playerWin = window.open(url, 'timer_player',
+    'width=900,height=600,menubar=no,toolbar=no,location=no,status=no');
+  setTimeout(updateWindowStatus, 500);
+}
+
+function updateWindowStatus() {
+  const dot  = document.getElementById('wsDot');
+  const text = document.getElementById('wsText');
+  const open = playerWin && !playerWin.closed;
+
+  if (!open) {
+    dot.className  = 'ws-dot';
+    text.textContent = 'Ventana del reproductor no abierta';
+    return;
+  }
+
+  const s = playerState.status;
+  if (s === 'playing') {
+    dot.className  = 'ws-dot playing';
+    text.textContent = '▶ Reproduciendo en la ventana del reproductor';
+  } else if (s === 'paused') {
+    dot.className  = 'ws-dot on';
+    text.textContent = '⏸ Pausado — ventana abierta';
+  } else if (s === 'done') {
+    dot.className  = 'ws-dot';
+    text.textContent = '¡Tiempo! — ventana abierta';
+  } else {
+    dot.className  = 'ws-dot on';
+    text.textContent = 'Ventana del reproductor abierta y lista';
+  }
+}
+
+// Pulsar periódicamente para detectar si la ventana se cerró
+setInterval(updateWindowStatus, 1500);
+
+// ─── Comandos de reproducción ─────────────────────────────────────────
+function sendPlay() {
+  if (!playerWin || playerWin.closed) {
+    openPlayerWindow();
+    setTimeout(() => _doPlay(), 800);
+    return;
+  }
+  _doPlay();
+}
+
+function _doPlay() {
+  if (appType === 'stopwatch') {
+    broadcast({ cmd: 'play', mode: 'stopwatch', name: 'Cronómetro', totalMs: 0 });
+  } else {
+    if (!activeId) { alert('Selecciona un temporizador primero.'); return; }
+    const t = timers.find(x => x.id === activeId);
+    if (!t) return;
+    broadcast({ cmd: 'play', mode: 'timer', name: t.name, totalMs: t.ms });
+  }
+  playerState.status = 'playing';
+  updateWindowStatus();
+}
+
+function sendPause()  { broadcast({ cmd: 'pause' });  playerState.status = 'paused';  updateWindowStatus(); }
+function sendReset()  { broadcast({ cmd: 'reset' });  playerState.status = 'paused';  updateWindowStatus(); }
+function sendStop()   { broadcast({ cmd: 'stop'  });  playerState.status = 'idle';    updateWindowStatus(); }
+
+// ─── Escuchar estado de vuelta del reproductor ────────────────────────
+window.addEventListener('storage', e => {
+  if (e.key !== CH + '_back') return;
+  try {
+    const msg = JSON.parse(e.newValue);
+    if (msg.status) { playerState.status = msg.status; updateWindowStatus(); }
+  } catch(err) {}
+});
+
+// ─── Toggle tipo ──────────────────────────────────────────────────────
+function switchType(type) {
+  appType = type;
+  document.getElementById('ttTimer').classList.toggle('active',     type==='timer');
+  document.getElementById('ttStopwatch').classList.toggle('active', type==='stopwatch');
+  document.getElementById('createCard').style.display    = type==='timer' ? '' : 'none';
+  document.getElementById('savedSection').style.display  = type==='timer' ? '' : 'none';
+  if (type === 'stopwatch') {
+    activeId = null;
+    document.getElementById('previewTime').textContent = '00:00';
+    document.getElementById('previewName').textContent = 'Cronómetro libre';
+    document.getElementById('previewSub').textContent  = 'Contará hacia arriba desde cero';
+    renderSaved();
+  } else {
+    updatePreview();
+  }
+}
+
+// ─── Vista previa ─────────────────────────────────────────────────────
+function updatePreview() {
+  if (!activeId) {
+    document.getElementById('previewTime').textContent = '--:--';
+    document.getElementById('previewName').textContent = 'Sin selección';
+    document.getElementById('previewSub').textContent  = 'Selecciona un temporizador';
+    return;
+  }
+  const t = timers.find(x => x.id === activeId);
+  if (!t) return;
+  document.getElementById('previewTime').textContent = fmtMs(t.ms);
+  document.getElementById('previewName').textContent = t.name;
+  document.getElementById('previewSub').textContent  = fmtLabel(t.ms);
+}
+
+// ─── CRUD temporizadores ──────────────────────────────────────────────
+function addTimer() {
+  const name = document.getElementById('inName').value.trim() || 'Timer';
+  const min  = parseInt(document.getElementById('inMin').value) || 0;
+  const sec  = parseInt(document.getElementById('inSec').value) || 0;
+  const ms   = (min*60+sec)*1000;
+  if (ms <= 0) { alert('El tiempo debe ser mayor a 0.'); return; }
+  const entry = { id: Date.now(), name, ms, color: COLORS[colorIdx++ % COLORS.length] };
+  timers.unshift(entry);
+  saveToDB(); renderSaved();
+  document.getElementById('inName').value = '';
+  selectTimer(entry.id);
+}
+
+function selectTimer(id) {
+  activeId = id;
+  updatePreview();
+  renderSaved();
+}
+
+function deleteTimer(id) {
+  timers = timers.filter(x => x.id !== id);
+  if (activeId === id) { activeId = null; updatePreview(); }
+  saveToDB(); renderSaved();
+}
+
+function saveToDB() { localStorage.setItem('timers_v5', JSON.stringify(timers)); }
+
+function renderSaved() {
+  const list = document.getElementById('savedList');
+  document.getElementById('countBadge').textContent = timers.length;
+  if (timers.length === 0) {
+    list.innerHTML = `<div class="empty"><strong>⏱</strong>Sin temporizadores guardados.<br>Crea uno arriba para empezar.</div>`;
+    return;
+  }
+  list.innerHTML = timers.map(t => `
+    <div class="t-card ${activeId===t.id?'selected':''}" onclick="selectTimer(${t.id})">
+      <div class="t-dot" style="background:${t.color}"></div>
+      <div class="t-info">
+        <div class="t-name">${t.name}</div>
+        <div class="t-dur">${fmtLabel(t.ms)}</div>
+      </div>
+      <div class="t-time">${fmtMs(t.ms)}</div>
+      <div class="t-actions">
+        <button class="icon-btn" title="Seleccionar y reproducir"
+          onclick="event.stopPropagation();selectTimer(${t.id});sendPlay()">▶</button>
+        <button class="icon-btn del" title="Eliminar"
+          onclick="event.stopPropagation();deleteTimer(${t.id})">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────
+renderSaved();
+updatePreview();
+updateWindowStatus();
+</script>
+</body>
+</html>
