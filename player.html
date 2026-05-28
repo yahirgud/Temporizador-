@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reproductor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:     #1a1a2e;
+  --yellow: #f5c542;
+  --red:    #e03535;
+  --mono:   'DM Mono', monospace;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: #fff;
+  font-family: var(--mono);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ══ LAYOUT RAÍZ ══
+   Por defecto: solo el timer (split oculto).
+   Con .split-active: dos paneles lado a lado separados por el divisor. */
+#root {
+  width: 100%; height: 100%;
+  display: flex;
+  position: relative;
+}
+
+/* ── Panel timer ── */
+#timerPanel {
+  flex: 1;           /* ocupa todo cuando no hay split */
+  min-width: 200px;
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  position: relative;
+  background: var(--bg);
+  transition: flex 0s; /* sin transición al arrastrar */
+}
+
+/* ── Divisor arrastrable ── */
+#divider {
+  display: none;          /* oculto hasta split activo */
+  width: 6px;
+  height: 100%;
+  background: rgba(255,255,255,0.06);
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 50;
+  transition: background 0.2s;
+}
+#divider:hover, #divider.dragging { background: rgba(255,255,255,0.18); }
+
+/* Línea central del divisor */
+#divider::after {
+  content: '';
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px; height: 40px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 2px;
+}
+
+/* ── Panel pantalla 2 ── */
+#screenPanel {
+  display: none;          /* oculto hasta split activo */
+  width: 400px;           /* ancho inicial, ajustable */
+  min-width: 160px;
+  height: 100%;
+  background: #0d1220;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Activar split */
+#root.split-active #divider,
+#root.split-active #screenPanel { display: block; }
+
+#screenVideo {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+}
+
+/* Label "● PANTALLA 2" */
+#screenLabel {
+  position: absolute; top: 10px; left: 10px;
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(0,0,0,0.45); border-radius: 5px;
+  padding: 4px 9px; font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: rgba(255,255,255,0.5);
+  opacity: 0; transition: opacity 0.2s;
+}
+#screenPanel:hover #screenLabel { opacity: 1; }
+.sl-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4caf50; animation: slPulse 1.4s ease-in-out infinite;
+}
+@keyframes slPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Botón cerrar pantalla 2 */
+#btnCloseScreen {
+  position: absolute; top: 10px; right: 10px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(255,255,255,0.1); border: none;
+  color: rgba(255,255,255,0.6); font-size: 11px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: all 0.2s;
+}
+#screenPanel:hover #btnCloseScreen { opacity: 1; }
+#btnCloseScreen:hover { background: rgba(224,53,53,0.7); color: #fff; }
+
+/* ── Idle ── */
+#stateIdle {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 16px; text-align: center;
+}
+.idle-icon { font-size: 3rem; opacity: 0.15; }
+.idle-text {
+  font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(255,255,255,0.2); line-height: 2;
+}
+
+/* ── Activo ── */
+#stateActive {
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 100%; gap: 0;
+}
+
+.mode-label {
+  font-size: clamp(0.6rem, 1.6vw, 0.8rem);
+  letter-spacing: 0.28em; text-transform: uppercase;
+  color: rgba(255,255,255,0.22);
+  margin-bottom: clamp(4px, 1.5vh, 12px);
+}
+
+.timer-name {
+  font-size: clamp(1rem, 3.5vw, 1.9rem);
+  font-weight: 400;
+  color: rgba(255,255,255,0.38);
+  letter-spacing: 0.05em;
+  margin-bottom: clamp(2px, 1vh, 10px);
+  max-width: 80%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; text-align: center;
+}
+
+#bigTime {
+  font-size: clamp(4rem, 18vw, 16rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: #fff;
+  text-align: center;
+}
+
+#bigTime.warning  { animation: blinkYellow 1s step-start infinite; }
+#bigTime.overtime { animation: blinkRed    1s step-start infinite; }
+#bigTime.stopwatch-free { color: #fff; animation: none; }
+#bigTime.paused   { color: rgba(255,255,255,0.28); animation: none; }
+
+@keyframes blinkYellow {
+  0%, 100% { color: var(--yellow); }
+  50%       { color: rgba(255,255,255,0.1); }
+}
+@keyframes blinkRed {
+  0%, 100% { color: var(--red); }
+  50%       { color: rgba(255,255,255,0.1); }
+}
+
+.sub-label {
+  font-size: clamp(0.75rem, 2.2vw, 1.1rem);
+  font-weight: 500;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: rgba(255,255,255,0.22);
+  margin-top: clamp(10px, 2.5vh, 24px);
+}
+.sub-label.overtime { color: rgba(229,53,53,0.85); font-size: clamp(2rem, 6.5vw, 3.4rem); letter-spacing: 0.1em; }
+.sub-label.warning  { color: rgba(245,197,66,0.7); }
+
+/* Barra de progreso — dentro del panel timer */
+.prog-wrap {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: rgba(255,255,255,0.07);
+}
+.prog-fill {
+  height: 100%; width: 0%;
+  background: rgba(255,255,255,0.3);
+  transition: width 0.15s linear, background 0.4s;
+}
+.prog-fill.warning  { background: var(--yellow); }
+.prog-fill.overtime { background: var(--red); }
+
+/* Botón flotante para activar pantalla 2 */
+#btnPip {
+  position: absolute; bottom: 24px; right: 24px;
+  font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em;
+  padding: 8px 14px; border-radius: 8px;
+  background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.4);
+  border: 1px solid rgba(255,255,255,0.1); cursor: pointer;
+  transition: all 0.18s; z-index: 99;
+}
+#btnPip:hover { background: rgba(255,255,255,0.13); color: rgba(255,255,255,0.8); }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <!-- ── Panel izquierdo: Timer ── -->
+  <div id="timerPanel">
+
+    <div id="stateIdle">
+      <div class="idle-icon">⏱</div>
+      <div class="idle-text">
+        Esperando...<br>
+        Presiona <strong>Reproducir</strong><br>en la ventana de configuración
+      </div>
+    </div>
+
+    <div id="stateActive">
+      <div class="mode-label" id="modeLabel">temporizador</div>
+      <div class="timer-name" id="timerName"></div>
+      <div id="bigTime">00:00</div>
+      <div class="sub-label" id="subLabel">en curso</div>
+    </div>
+
+    <div class="prog-wrap">
+      <div class="prog-fill" id="progFill"></div>
+    </div>
+
+    <!-- Botón pantalla 2 -->
+    <button id="btnPip" onclick="startSplit()" title="Mostrar segunda pantalla">⎙ Pantalla 2</button>
+
+  </div>
+
+  <!-- ── Divisor arrastrable ── -->
+  <div id="divider"></div>
+
+  <!-- ── Panel derecho: Pantalla capturada ── -->
+  <div id="screenPanel">
+    <video id="screenVideo" autoplay muted playsinline></video>
+    <div id="screenLabel">
+      <div class="sl-dot"></div>
+      pantalla 2
+    </div>
+    <button id="btnCloseScreen" onclick="stopSplit()" title="Cerrar pantalla 2">✕</button>
+  </div>
+
+</div>
+<script>
+// ─── Canales ──────────────────────────────────────────────────────
+const CH       = 'timer_channel_v1';
+const CH_BACK  = 'timer_channel_v1_back';
+const CH_STATE = 'timer_mirror_state';
+const WARN_MS  = 60 * 1000;
+
+// ─── Estado timer ─────────────────────────────────────────────────
+let playerMode = 'idle';
+let totalMs = 0, remaining = 0, elapsed = 0;
+let running = false, lastTick = 0, rafId = null;
+
+// ─── Utils ────────────────────────────────────────────────────────
+const pad = n => String(Math.floor(Math.abs(n))).padStart(2,'0');
+function fmtMs(ms) {
+  const t=Math.floor(ms/1000), s=t%60, m=Math.floor(t/60)%60, h=Math.floor(t/3600);
+  return h>0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+function publishState() {
+  localStorage.setItem(CH_STATE, JSON.stringify({
+    playerMode, totalMs, remaining, elapsed, running, ts: Date.now()
+  }));
+}
+function sendBack(status) {
+  localStorage.setItem(CH_BACK, JSON.stringify({ status, _t: Date.now() }));
+}
+function setSubLabel(txt, cls='') {
+  const el = document.getElementById('subLabel');
+  el.textContent = txt;
+  el.className = 'sub-label' + (cls ? ' '+cls : '');
+}
+
+// ─── Display ──────────────────────────────────────────────────────
+function updateDisplay() {
+  const ms = (playerMode==='timer') ? remaining : elapsed;
+  const el = document.getElementById('bigTime');
+  const pf = document.getElementById('progFill');
+
+  el.textContent = fmtMs(ms);
+  el.className = '';
+
+  if (!running && playerMode !== 'idle') {
+    el.classList.add('paused');
+  } else if (playerMode === 'timer' && remaining <= WARN_MS && remaining > 0) {
+    el.classList.add('warning');
+  } else if (playerMode === 'overtime') {
+    el.classList.add('overtime');
+  } else if (playerMode === 'stopwatch') {
+    el.classList.add('stopwatch-free');
+  }
+
+  pf.className = 'prog-fill';
+  if (playerMode === 'timer') {
+    document.querySelector('.prog-wrap').style.opacity = '1';
+    if (remaining <= WARN_MS && remaining > 0) pf.classList.add('warning');
+    pf.style.width = Math.min(100, (1 - remaining/totalMs)*100) + '%';
+  } else {
+    document.querySelector('.prog-wrap').style.opacity = '0';
+    pf.style.width = '0%';
+  }
+
+  publishState();
+}
+
+// ─── Tick ─────────────────────────────────────────────────────────
+function tick() {
+  if (!running) return;
+  const now = Date.now(), delta = now - lastTick;
+  lastTick = now;
+
+  if (playerMode === 'timer') {
+    remaining = Math.max(0, remaining - delta);
+    updateDisplay();
+    if (remaining <= 0) {
+      playerMode = 'overtime'; elapsed = 0;
+      document.getElementById('modeLabel').textContent = 'tiempo extra';
+      setSubLabel('tiempo extra', 'overtime');
+      updateDisplay();
+    }
+  } else {
+    elapsed += delta;
+    updateDisplay();
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+// ─── Acciones timer ───────────────────────────────────────────────
+function doPlay(mode, ms, name) {
+  cancelAnimationFrame(rafId);
+  playerMode = mode; totalMs = ms; remaining = ms; elapsed = 0;
+  running = true; lastTick = Date.now();
+  document.getElementById('stateIdle').style.display   = 'none';
+  document.getElementById('stateActive').style.display = 'flex';
+  document.getElementById('modeLabel').textContent = mode==='timer' ? 'temporizador' : 'cronómetro';
+  document.getElementById('timerName').textContent = name || '';
+  setSubLabel('en curso');
+  updateDisplay(); sendBack('playing');
+  rafId = requestAnimationFrame(tick);
+}
+function doPause() {
+  if (playerMode==='idle') return;
+  cancelAnimationFrame(rafId); running = false;
+  setSubLabel('pausado'); updateDisplay(); sendBack('paused');
+}
+function doResume() {
+  if (playerMode==='idle' || running) return;
+  if (playerMode==='timer' && remaining<=0) return;
+  running = true; lastTick = Date.now();
+  setSubLabel(playerMode==='overtime' ? 'tiempo extra' : 'en curso',
+              playerMode==='overtime' ? 'overtime'    : '');
+  updateDisplay(); sendBack('playing');
+  rafId = requestAnimationFrame(tick);
+}
+function doReset() {
+  cancelAnimationFrame(rafId); running = false;
+  playerMode = 'timer'; elapsed = 0; remaining = totalMs;
+  document.getElementById('modeLabel').textContent = 'temporizador';
+  setSubLabel('listo'); updateDisplay(); sendBack('paused');
+}
+function doStop() {
+  cancelAnimationFrame(rafId); running = false;
+  playerMode = 'idle'; elapsed = 0; remaining = 0;
+  document.getElementById('stateActive').style.display = 'none';
+  document.getElementById('stateIdle').style.display   = 'flex';
+  const el = document.getElementById('bigTime');
+  el.className = ''; el.textContent = '00:00';
+  const pf = document.getElementById('progFill');
+  pf.style.width = '0%'; pf.className = 'prog-fill';
+  sendBack('idle'); localStorage.removeItem(CH_STATE);
+}
+
+// ─── Comandos desde configuración ─────────────────────────────────
+window.addEventListener('storage', e => {
+  if (e.key !== CH) return;
+  try {
+    const msg = JSON.parse(e.newValue);
+    switch (msg.cmd) {
+      case 'play':  doPlay(msg.mode, msg.totalMs, msg.name); break;
+      case 'pause': running ? doPause() : doResume();        break;
+      case 'reset': doReset();                               break;
+      case 'stop':  doStop();                                break;
+    }
+  } catch(e) {}
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code==='Space') { e.preventDefault(); running ? doPause() : doResume(); }
+});
+
+// ─── Split: pantalla dividida con divisor arrastrable ─────────────
+let splitStream = null;
+
+async function startSplit() {
+  try {
+    splitStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always' }, audio: false
+    });
+    const video = document.getElementById('screenVideo');
+    video.srcObject = splitStream;
+
+    // Activar layout split
+    document.getElementById('root').classList.add('split-active');
+    document.getElementById('btnPip').style.display = 'none';
+
+    // Cerrar automáticamente si el usuario para la captura desde el navegador
+    splitStream.getVideoTracks()[0].addEventListener('ended', stopSplit);
+
+    initDivider();
+  } catch (err) {
+    console.warn('Captura cancelada:', err.message);
+  }
+}
+
+function stopSplit() {
+  if (splitStream) {
+    splitStream.getTracks().forEach(t => t.stop());
+    splitStream = null;
+  }
+  document.getElementById('screenVideo').srcObject = null;
+  document.getElementById('root').classList.remove('split-active');
+  document.getElementById('btnPip').style.display = '';
+  // Restaurar ancho del panel por si el usuario lo ajustó
+  document.getElementById('screenPanel').style.width = '400px';
+}
+
+// ─── Divisor arrastrable ──────────────────────────────────────────
+function initDivider() {
+  const divider     = document.getElementById('divider');
+  const screenPanel = document.getElementById('screenPanel');
+  const root        = document.getElementById('root');
+  let dragging = false, startX = 0, startW = 0;
+
+  // Evitar registrar múltiples veces si el usuario reabre
+  if (divider._initialized) return;
+  divider._initialized = true;
+
+  divider.addEventListener('mousedown', e => {
+    dragging = true;
+    startX   = e.clientX;
+    startW   = screenPanel.offsetWidth;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx      = startX - e.clientX;          // mover izq → agranda pantalla 2
+    const rootW   = root.offsetWidth;
+    const minTimer = 200;
+    const newW    = Math.max(160, Math.min(startW + dx, rootW - minTimer - 6));
+    screenPanel.style.width = newW + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+  });
+}
+</script>
+</body>
+</html>
