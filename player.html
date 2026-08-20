@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reproductor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:     #1a1a2e;
+  --yellow: #f5c542;
+  --red:    #e03535;
+  --mono:   'DM Mono', monospace;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: #fff;
+  font-family: var(--mono);
+  overflow: hidden;
+  user-select: none;
+}
+
+#root {
+  width: 100%; height: 100%;
+  display: flex;
+  position: relative;
+}
+
+/* ── Panel timer ── */
+#timerPanel {
+  flex: 1;
+  min-width: 200px;
+  height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  position: relative;
+  background: var(--bg);
+  /* Hint al compositor para que promueva este layer */
+  will-change: contents;
+}
+
+/* ── Divisor ── */
+#divider {
+  display: none;
+  width: 6px;
+  height: 100%;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 50;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s;
+}
+#root.split-active #divider { display: block; }
+
+#divider::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%; transform: translateX(-50%);
+  width: 1px;
+  background: rgba(255,255,255,0.1);
+  transition: background 0.2s, width 0.2s;
+}
+#divider:hover,
+#divider.dragging { background: rgba(255,255,255,0.06); }
+#divider:hover::before,
+#divider.dragging::before { background: rgba(255,255,255,0.35); width: 2px; }
+
+#divider::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.0);
+  border: 1px solid rgba(255,255,255,0.0);
+  transition: all 0.2s;
+}
+#divider:hover::after {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* ── Panel pantalla 2 ── */
+#screenPanel {
+  display: none;
+  width: 400px;
+  min-width: 160px;
+  height: 100%;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+#root.split-active #screenPanel { display: block; }
+
+#screenVideo {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  display: block;
+  background: var(--bg);
+  /* Delegar decodificación de video al compositor */
+  will-change: transform;
+}
+
+#screenLabel {
+  position: absolute; top: 10px; left: 10px;
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(0,0,0,0.35); border-radius: 5px;
+  padding: 4px 9px; font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: rgba(255,255,255,0.5);
+  opacity: 0; transition: opacity 0.2s;
+  pointer-events: none;
+}
+#screenPanel:hover #screenLabel { opacity: 1; }
+.sl-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4caf50; animation: slPulse 1.4s ease-in-out infinite;
+}
+@keyframes slPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+#btnCloseScreen {
+  position: absolute; top: 10px; right: 10px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(255,255,255,0.1); border: none;
+  color: rgba(255,255,255,0.6); font-size: 11px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: all 0.2s;
+}
+#screenPanel:hover #btnCloseScreen { opacity: 1; }
+#btnCloseScreen:hover { background: rgba(224,53,53,0.7); color: #fff; }
+
+/* ── Idle ── */
+#stateIdle {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 16px; text-align: center;
+}
+.idle-icon { font-size: 3rem; opacity: 0.15; }
+.idle-text {
+  font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(255,255,255,0.2); line-height: 2;
+}
+
+/* ── Activo ── */
+#stateActive {
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 100%; gap: 0;
+}
+
+.mode-label {
+  font-size: clamp(0.6rem, 1.6vw, 0.8rem);
+  letter-spacing: 0.28em; text-transform: uppercase;
+  color: rgba(255,255,255,0.22);
+  margin-bottom: clamp(4px, 1.5vh, 12px);
+}
+
+.timer-name {
+  font-size: clamp(1rem, 3.5vw, 1.9rem);
+  font-weight: 400;
+  color: rgba(255,255,255,0.38);
+  letter-spacing: 0.05em;
+  margin-bottom: clamp(2px, 1vh, 10px);
+  max-width: 80%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; text-align: center;
+}
+
+#bigTime {
+  font-size: clamp(4rem, 18vw, 16rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: #fff;
+  text-align: center;
+  /* Evitar reflow al cambiar el texto */
+  font-variant-numeric: tabular-nums;
+  will-change: contents;
+}
+
+#bigTime.warning  { animation: blinkYellow 1s step-start infinite; }
+#bigTime.overtime { animation: blinkRed    1s step-start infinite; }
+#bigTime.stopwatch-free { color: #fff; animation: none; }
+#bigTime.paused   { color: rgba(255,255,255,0.28); animation: none; }
+
+@keyframes blinkYellow {
+  0%, 100% { color: var(--yellow); }
+  50%       { color: rgba(255,255,255,0.1); }
+}
+@keyframes blinkRed {
+  0%, 100% { color: var(--red); }
+  50%       { color: rgba(255,255,255,0.1); }
+}
+
+.sub-label {
+  font-size: clamp(0.75rem, 2.2vw, 1.1rem);
+  font-weight: 500;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: rgba(255,255,255,0.22);
+  margin-top: clamp(10px, 2.5vh, 24px);
+}
+.sub-label.overtime { color: rgba(229,53,53,0.85); font-size: clamp(2rem, 6.5vw, 3.4rem); letter-spacing: 0.1em; }
+.sub-label.warning  { color: rgba(245,197,66,0.7); }
+
+.prog-wrap {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+  background: rgba(255,255,255,0.07);
+}
+.prog-fill {
+  height: 100%; width: 0%;
+  background: rgba(255,255,255,0.3);
+  transition: width 0.9s linear, background 0.4s;
+  will-change: width;
+}
+.prog-fill.warning  { background: var(--yellow); }
+.prog-fill.overtime { background: var(--red); }
+
+#btnPip {
+  position: absolute; bottom: 24px; right: 24px;
+  font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em;
+  padding: 8px 14px; border-radius: 8px;
+  background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.4);
+  border: 1px solid rgba(255,255,255,0.1); cursor: pointer;
+  transition: all 0.18s; z-index: 99;
+}
+#btnPip:hover { background: rgba(255,255,255,0.13); color: rgba(255,255,255,0.8); }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <div id="timerPanel">
+    <div id="stateIdle">
+      <div class="idle-icon">⏱</div>
+      <div class="idle-text">
+        Esperando...<br>
+        Presiona <strong>Reproducir</strong><br>en la ventana de configuración
+      </div>
+    </div>
+
+    <div id="stateActive">
+      <div class="mode-label" id="modeLabel">temporizador</div>
+      <div class="timer-name" id="timerName"></div>
+      <div id="bigTime">00:00</div>
+      <div class="sub-label" id="subLabel">en curso</div>
+    </div>
+
+    <div class="prog-wrap">
+      <div class="prog-fill" id="progFill"></div>
+    </div>
+
+    <button id="btnPip" onclick="startSplit()" title="Mostrar segunda pantalla">⎙ Pantalla 2</button>
+  </div>
+
+  <div id="divider"></div>
+
+  <div id="screenPanel">
+    <video id="screenVideo" autoplay muted playsinline></video>
+    <div id="screenLabel">
+      <div class="sl-dot"></div>
+      pantalla 2
+    </div>
+    <button id="btnCloseScreen" onclick="stopSplit()" title="Cerrar pantalla 2">✕</button>
+  </div>
+
+</div>
+<script>
+// ─── Canales ──────────────────────────────────────────────────────
+const CH       = 'timer_channel_v1';
+const CH_BACK  = 'timer_channel_v1_back';
+const CH_STATE = 'timer_mirror_state';
+const WARN_MS  = 60 * 1000;
+
+// ─── Estado timer ─────────────────────────────────────────────────
+let playerMode = 'idle';
+let totalMs = 0, remaining = 0, elapsed = 0;
+let running = false, lastTick = 0, rafId = null;
+
+// ─── Optimización 1: throttle de localStorage por segundo ─────────
+let lastPublishedSecond = -1;
+
+function publishState(force = false) {
+  const ms = (playerMode === 'timer') ? remaining : elapsed;
+  const currentSecond = Math.floor(ms / 1000);
+  // Solo escribir si cambió el segundo, o si es un evento de estado (force)
+  if (force || currentSecond !== lastPublishedSecond) {
+    lastPublishedSecond = currentSecond;
+    localStorage.setItem(CH_STATE, JSON.stringify({
+      playerMode, totalMs, remaining, elapsed, running, ts: Date.now()
+    }));
+  }
+}
+
+function sendBack(status) {
+  localStorage.setItem(CH_BACK, JSON.stringify({ status, _t: Date.now() }));
+}
+
+// ─── Referencias DOM cacheadas ────────────────────────────────────
+// Evita document.getElementById / querySelector en cada frame
+const elBigTime  = document.getElementById('bigTime');
+const elProgFill = document.getElementById('progFill');
+const elProgWrap = document.querySelector('.prog-wrap');
+const elModeLabel = document.getElementById('modeLabel');
+const elSubLabel  = document.getElementById('subLabel');
+const elTimerName = document.getElementById('timerName');
+const elStateIdle   = document.getElementById('stateIdle');
+const elStateActive = document.getElementById('stateActive');
+
+function setSubLabel(txt, cls='') {
+  elSubLabel.textContent = txt;
+  elSubLabel.className = 'sub-label' + (cls ? ' '+cls : '');
+}
+
+// ─── Display optimizado ───────────────────────────────────────────
+// Solo toca el DOM cuando el valor realmente cambia
+let lastDisplayStr  = '';
+let lastDisplayClass = '';
+let lastProgWidth   = '';
+let lastProgClass   = '';
+
+function updateDisplay() {
+  const ms = (playerMode === 'timer') ? remaining : elapsed;
+
+  // ── Texto del tiempo: solo actualizar si cambió ──
+  const timeStr = fmtMs(ms);
+  if (timeStr !== lastDisplayStr) {
+    lastDisplayStr = timeStr;
+    elBigTime.textContent = timeStr;
+  }
+
+  // ── Clase CSS del tiempo ──
+  let newClass = '';
+  if (!running && playerMode !== 'idle') {
+    newClass = 'paused';
+  } else if (playerMode === 'timer' && remaining <= WARN_MS && remaining > 0) {
+    newClass = 'warning';
+  } else if (playerMode === 'overtime') {
+    newClass = 'overtime';
+  } else if (playerMode === 'stopwatch') {
+    newClass = 'stopwatch-free';
+  }
+  if (newClass !== lastDisplayClass) {
+    lastDisplayClass = newClass;
+    elBigTime.className = newClass;
+  }
+
+  // ── Barra de progreso ──
+  if (playerMode === 'timer') {
+    elProgWrap.style.opacity = '1';
+    const newProgClass = (remaining <= WARN_MS && remaining > 0) ? 'prog-fill warning' : 'prog-fill';
+    if (newProgClass !== lastProgClass) {
+      lastProgClass = newProgClass;
+      elProgFill.className = newProgClass;
+    }
+    const ratio = totalMs > 0 ? Math.min(100, (1 - remaining / totalMs) * 100) : 0;
+    // Redondear a 1 decimal para evitar escrituras triviales
+    const newW = ratio.toFixed(1) + '%';
+    if (newW !== lastProgWidth) {
+      lastProgWidth = newW;
+      elProgFill.style.width = newW;
+    }
+  } else {
+    if (lastProgClass !== 'hidden') {
+      lastProgClass = 'hidden';
+      elProgWrap.style.opacity = '0';
+      elProgFill.style.width = '0%';
+    }
+  }
+
+  // ── Publicar al espejo (throttled) ──
+  publishState();
+}
+
+// ─── Utils ────────────────────────────────────────────────────────
+const pad = n => String(Math.floor(Math.abs(n))).padStart(2,'0');
+function fmtMs(ms) {
+  const t=Math.floor(ms/1000), s=t%60, m=Math.floor(t/60)%60, h=Math.floor(t/3600);
+  return h>0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+// ─── Tick ─────────────────────────────────────────────────────────
+function tick() {
+  if (!running) return;
+  const now = Date.now(), delta = now - lastTick;
+  lastTick = now;
+
+  if (playerMode === 'timer') {
+    remaining = Math.max(0, remaining - delta);
+    updateDisplay();
+    if (remaining <= 0) {
+      playerMode = 'overtime'; elapsed = 0;
+      elModeLabel.textContent = 'tiempo extra';
+      setSubLabel('tiempo extra', 'overtime');
+      publishState(true); // forzar publicación en cambio de estado
+    }
+  } else {
+    elapsed += delta;
+    updateDisplay();
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+// ─── Acciones timer ───────────────────────────────────────────────
+function doPlay(mode, ms, name) {
+  cancelAnimationFrame(rafId);
+  playerMode = mode; totalMs = ms; remaining = ms; elapsed = 0;
+  running = true; lastTick = Date.now();
+  lastDisplayStr = ''; lastDisplayClass = ''; lastProgWidth = ''; lastProgClass = '';
+  lastPublishedSecond = -1;
+  elStateIdle.style.display   = 'none';
+  elStateActive.style.display = 'flex';
+  elModeLabel.textContent = mode==='timer' ? 'temporizador' : 'cronómetro';
+  elTimerName.textContent = name || '';
+  setSubLabel('en curso');
+  updateDisplay();
+  sendBack('playing');
+  publishState(true);
+  rafId = requestAnimationFrame(tick);
+}
+function doPause() {
+  if (playerMode==='idle') return;
+  cancelAnimationFrame(rafId); running = false;
+  setSubLabel('pausado');
+  updateDisplay();
+  sendBack('paused');
+  publishState(true);
+}
+function doResume() {
+  if (playerMode==='idle' || running) return;
+  if (playerMode==='timer' && remaining<=0) return;
+  running = true; lastTick = Date.now();
+  setSubLabel(playerMode==='overtime' ? 'tiempo extra' : 'en curso',
+              playerMode==='overtime' ? 'overtime'    : '');
+  updateDisplay();
+  sendBack('playing');
+  publishState(true);
+  rafId = requestAnimationFrame(tick);
+}
+function doReset() {
+  cancelAnimationFrame(rafId); running = false;
+  playerMode = 'timer'; elapsed = 0; remaining = totalMs;
+  lastDisplayStr = ''; lastPublishedSecond = -1;
+  elModeLabel.textContent = 'temporizador';
+  setSubLabel('listo');
+  updateDisplay();
+  sendBack('paused');
+  publishState(true);
+}
+function doStop() {
+  cancelAnimationFrame(rafId); running = false;
+  playerMode = 'idle'; elapsed = 0; remaining = 0;
+  lastDisplayStr = ''; lastDisplayClass = ''; lastProgWidth = ''; lastProgClass = '';
+  elStateActive.style.display = 'none';
+  elStateIdle.style.display   = 'flex';
+  elBigTime.className = ''; elBigTime.textContent = '00:00';
+  elProgFill.style.width = '0%'; elProgFill.className = 'prog-fill';
+  sendBack('idle');
+  localStorage.removeItem(CH_STATE);
+}
+
+// ─── Comandos desde configuración ─────────────────────────────────
+window.addEventListener('storage', e => {
+  if (e.key !== CH) return;
+  try {
+    const msg = JSON.parse(e.newValue);
+    switch (msg.cmd) {
+      case 'play':  doPlay(msg.mode, msg.totalMs, msg.name); break;
+      case 'pause': running ? doPause() : doResume();        break;
+      case 'reset': doReset();                               break;
+      case 'stop':  doStop();                                break;
+    }
+  } catch(e) {}
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code==='Space') { e.preventDefault(); running ? doPause() : doResume(); }
+});
+
+// ─── Split: pantalla dividida ─────────────────────────────────────
+let splitStream = null;
+
+async function startSplit() {
+  try {
+    // Optimización 2: limitar frameRate para reducir carga GPU
+    splitStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        cursor: 'always',
+        frameRate: { ideal: 30, max: 30 }
+      },
+      audio: false
+    });
+
+    const video = document.getElementById('screenVideo');
+    video.srcObject = splitStream;
+
+    const initialW = Math.floor(window.innerWidth * 0.4);
+    document.getElementById('screenPanel').style.width = initialW + 'px';
+    document.getElementById('root').classList.add('split-active');
+    document.getElementById('btnPip').style.display = 'none';
+
+    splitStream.getVideoTracks()[0].addEventListener('ended', stopSplit);
+    initDivider();
+  } catch (err) {
+    console.warn('Captura cancelada:', err.message);
+  }
+}
+
+function stopSplit() {
+  if (splitStream) {
+    splitStream.getTracks().forEach(t => t.stop());
+    splitStream = null;
+  }
+  document.getElementById('screenVideo').srcObject = null;
+  document.getElementById('root').classList.remove('split-active');
+  document.getElementById('btnPip').style.display = '';
+  document.getElementById('screenPanel').style.width = '400px';
+}
+
+// ─── Divisor arrastrable ──────────────────────────────────────────
+// Optimización 4: mousemove solo activo mientras se arrastra
+function initDivider() {
+  const divider     = document.getElementById('divider');
+  const screenPanel = document.getElementById('screenPanel');
+  const root        = document.getElementById('root');
+
+  if (divider._initialized) return;
+  divider._initialized = true;
+
+  let startX = 0, startW = 0;
+
+  function onMove(e) {
+    const dx   = startX - e.clientX;
+    const maxW = Math.floor(root.offsetWidth * 0.5);
+    const newW = Math.max(160, Math.min(startW + dx, maxW));
+    screenPanel.style.width = newW + 'px';
+  }
+
+  function onUp() {
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    // Remover listeners inmediatamente al soltar — libera CPU
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+
+  divider.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = screenPanel.offsetWidth;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    // Agregar listeners solo durante el arrastre
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+}
+</script>
+</body>
+</html>
